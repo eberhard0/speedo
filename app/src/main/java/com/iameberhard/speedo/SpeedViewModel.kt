@@ -49,7 +49,11 @@ class SpeedViewModel(app: Application) : AndroidViewModel(app), LocationListener
         private set
     var gpsEnabled by mutableStateOf(true)
         private set
+    /** Satellites used for the current position. */
     var satellites by mutableIntStateOf(0)
+        private set
+    /** Satellites whose signal is being received at all; climbs while still searching for a fix. */
+    var satellitesInView by mutableIntStateOf(0)
         private set
 
     private var last: Location? = null
@@ -58,8 +62,14 @@ class SpeedViewModel(app: Application) : AndroidViewModel(app), LocationListener
     private val gnssCallback = object : GnssStatusCompat.Callback() {
         override fun onSatelliteStatusChanged(status: GnssStatusCompat) {
             var used = 0
-            for (i in 0 until status.satelliteCount) if (status.usedInFix(i)) used++
+            var inView = 0
+            for (i in 0 until status.satelliteCount) {
+                if (status.usedInFix(i)) used++
+                // The list also holds satellites known only from the almanac; count those actually heard.
+                if (status.getCn0DbHz(i) > 0f) inView++
+            }
             satellites = used
+            satellitesInView = maxOf(inView, used)
         }
     }
 
@@ -100,6 +110,7 @@ class SpeedViewModel(app: Application) : AndroidViewModel(app), LocationListener
         locationManager.removeUpdates(this)
         LocationManagerCompat.unregisterGnssStatusCallback(locationManager, gnssCallback)
         satellites = 0
+        satellitesInView = 0
         running = false
     }
 

@@ -238,15 +238,18 @@ private fun Speedometer(viewModel: SpeedViewModel) {
 
     // GPS status sits inside the dial, under the unit: a headline plus a smaller detail line.
     val satellites = viewModel.satellites
+    val inView = viewModel.satellitesInView
     val accuracy = trip.accuracyM
     val status = when {
         !viewModel.gpsEnabled -> GpsStatus("Location is off", null, Warning)
         live -> GpsStatus(
             if (accuracy != null) "GPS ±${accuracy.roundToInt()} m" else "GPS locked",
-            "$satellites satellites",
+            "$satellites of $inView satellites",
             Accent,
         )
-        trip.lastFixMs != 0L -> GpsStatus("GPS signal lost", "searching · $satellites satellites", Warning)
+        trip.lastFixMs != 0L -> GpsStatus("GPS signal lost", "$satellites of $inView satellites", Warning)
+        // The in-view count climbing is the sign that a fix is on its way.
+        inView > 0 -> GpsStatus("Searching for GPS", "$inView satellites in view", Muted)
         else -> GpsStatus("Searching for GPS", "works best near a window", Muted)
     }
 
