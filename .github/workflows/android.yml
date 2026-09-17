@@ -11,6 +11,8 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # The web version deploys through Cloudflare; no need to rebuild the APK for it.
+    paths-ignore: ['web/**', 'wrangler.jsonc', '**.md']
   pull_request:
   workflow_dispatch:
 

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speedo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Speedo">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+  :root {
+    --accent: #3DDC97; --track: #1C232B; --card: #12171D; --muted: #8A96A3; --warning: #FFB454;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: #000; color: #fff; overflow: hidden; }
+  body {
+    font: 15px/1.35 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  }
+  #app {
+    height: 100%; display: flex; flex-direction: column;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 16px)
+             calc(env(safe-area-inset-bottom, 0px) + 12px) calc(env(safe-area-inset-left, 0px) + 16px);
+  }
+  #status { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 13px; }
+  #status.warn { color: var(--warning); }
+  #dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #status.live #dot { background: var(--accent); }
+  #status.warn #dot { background: var(--warning); }
+  #statusText { flex: 1; }
+
+  #main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+  #gauge { flex: 1; min-height: 0; min-width: 0; cursor: pointer; }
+  #gauge svg { width: 100%; height: 100%; display: block; }
+  .arc { fill: none; stroke-width: 10; stroke-linecap: round; }
+  #arcTrack { stroke: var(--track); }
+  #arcValue { stroke: var(--accent); transition: stroke-dasharray .6s ease-out; }
+  #speed { fill: #fff; font-size: 64px; font-weight: 700; font-feature-settings: "tnum"; }
+  #speed.stale { fill: var(--muted); }
+  #unit { fill: var(--accent); font-size: 15px; font-weight: 500; }
+  .scale { fill: var(--muted); font-size: 9px; }
+
+  #stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: var(--card); border-radius: 14px; padding: 10px 14px; min-width: 0; }
+  .stat small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .02em; }
+  .stat b { display: block; font-size: 20px; font-weight: 600; white-space: nowrap; font-feature-settings: "tnum"; }
+
+  #bar { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+  #toggle { display: flex; background: var(--card); border-radius: 999px; padding: 4px; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  #toggle button { padding: 8px 18px; border-radius: 999px; color: var(--muted); font-weight: 600; }
+  #toggle button.on { background: var(--accent); color: #000; }
+  .link { color: var(--accent); font-weight: 500; padding: 10px 4px 10px 12px; }
+
+  /* Landscape or a wide screen: dial on the left, trip figures on the right. */
+  @media (orientation: landscape), (min-width: 600px) {
+    #main { flex-direction: row; align-items: center; gap: 16px; }
+    #gauge { height: 100%; }
+    #stats { width: 240px; grid-template-columns: 1fr; }
+  }
+  @media (orientation: landscape) and (max-height: 480px) {
+    #stats { width: 320px; grid-template-columns: 1fr 1fr; }
+  }
+
+  #overlay {
+    position: fixed; inset: 0; background: #000; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; padding: 32px; gap: 12px;
+  }
+  #overlay h1 { font-size: 20px; margin: 0; }
+  #overlay p { color: var(--muted); margin: 0; max-width: 34em; }
+  #overlay button { margin-top: 12px; background: var(--accent); color: #000; font-weight: 600; padding: 12px 28px; border-radius: 999px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="status"><span id="dot"></span><span id="statusText">Starting…</span></div>
+
+  <div id="main">
+    <div id="gauge" role="button" aria-label="Switch between km/h and mph">
+      <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet">
+        <!-- Both arcs are circles drawn with a dash; rotated so they open at the bottom (135° → 45°). -->
+        <circle id="arcTrack" class="arc" cx="100" cy="100" r="88" transform="rotate(135 100 100)"/>
+        <circle id="arcValue" class="arc" cx="100" cy="100" r="88" transform="rotate(135 100 100)"/>
+        <text id="speed" x="100" y="118" text-anchor="middle">–</text>
+        <text id="unit" x="100" y="142" text-anchor="middle">km/h</text>
+        <text class="scale" x="52" y="182" text-anchor="middle">0</text>
+        <text id="scaleMax" class="scale" x="148" y="182" text-anchor="middle">60</text>
+      </svg>
+    </div>
+    <div id="stats">
+      <div class="stat"><small>MAX</small><b id="sMax">0 km/h</b></div>
+      <div class="stat"><small>AVERAGE</small><b id="sAvg">0 km/h</b></div>
+      <div class="stat"><small>DISTANCE</small><b id="sDist">0.0 km</b></div>
+      <div class="stat"><small>MOVING TIME</small><b id="sTime">0:00:00</b></div>
+    </div>
+  </div>
+
+  <div id="bar">
+    <div id="toggle">
+      <button id="btnKmh" type="button">km/h</button>
+      <button id="btnMph" type="button">mph</button>
+    </div>
+    <button id="btnReset" class="link" type="button">Reset trip</button>
+  </div>
+</div>
+
+<div id="overlay" hidden>
+  <h1 id="ovTitle"></h1>
+  <p id="ovText"></p>
+  <button id="ovButton" type="button">Try again</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var MPS_TO_KMH = 3.6, MPS_TO_MPH = 2.236936, METERS_PER_MILE = 1609.344;
+  var MIN_MOVING_MPS = 0.5;   // below walking pace the reading is mostly GPS jitter
+  var MAX_STEP_S = 5;         // normal stream: integrate speed
+  var MAX_GAP_S = 600;        // signal gap (tunnel): bridge in a straight line
+  var FIX_TIMEOUT_MS = 5000;  // older than this = signal lost
+  var ARC = 2 * Math.PI * 88 * 0.75;
+  var CIRCLE = 2 * Math.PI * 88;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var mph = false;
+  try { mph = localStorage.getItem('mph') === '1'; } catch (e) {}
+
+  // Speeds are m/s throughout, converted only for display.
+  var trip = { speed: 0, accuracy: null, max: 0, distance: 0, movingMs: 0 };
+  var last = null;          // previous fix: {lat, lon, t, accuracy}
+  var lastFixAt = 0;        // performance.now() when the newest fix arrived; 0 = never
+  var watchId = null;
+  var wakeLock = null;
+
+  $('arcTrack').setAttribute('stroke-dasharray', ARC + ' ' + CIRCLE);
+
+  function haversine(a, b) {
+    var R = 6371000, rad = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function onPosition(pos) {
+    var c = pos.coords;
+    var fix = { lat: c.latitude, lon: c.longitude, t: pos.timestamp, accuracy: c.accuracy || 0 };
+    var dtS = last ? (fix.t - last.t) / 1000 : 0;
+    if (last && dtS <= 0) return; // duplicate or out-of-order fix
+
+    // coords.speed is the GPS chip's own (Doppler) figure; browsers give null when it is unknown.
+    var hasSpeed = typeof c.speed === 'number' && isFinite(c.speed) && c.speed >= 0;
+    var speed = hasSpeed ? c.speed : (last && dtS > 0.2 ? haversine(last, fix) / dtS : 0);
+    if (speed < MIN_MOVING_MPS) speed = 0;
+
+    if (last) {
+      if (dtS <= MAX_STEP_S) {
+        var mean = (speed + trip.speed) / 2;
+        if (mean > 0) { trip.distance += mean * dtS; trip.movingMs += dtS * 1000; }
+      } else if (dtS <= MAX_GAP_S) {
+        var gap = haversine(last, fix);
+        if (gap > last.accuracy + fix.accuracy && gap / dtS >= MIN_MOVING_MPS) {
+          trip.distance += gap; trip.movingMs += dtS * 1000;
+        }
+      }
+    }
+    // A single wild fix must not become the trip maximum.
+    if (hasSpeed && fix.accuracy <= 50 && speed > trip.max) trip.max = speed;
+
+    trip.speed = speed;
+    trip.accuracy = c.accuracy;
+    last = fix;
+    lastFixAt = performance.now();
+    hideOverlay();
+    render();
+  }
+
+  function onError(err) {
+    if (err.code === 1) { // PERMISSION_DENIED
+      stopWatch();
+      showOverlay('Speedo needs your location',
+        'Speed is read from GPS. Nothing is stored or sent anywhere. On iPhone: Settings → Privacy & Security → ' +
+        'Location Services → Safari Websites (or Speedo) → "While Using", with Precise Location on. Then try again.');
+    }
+    // Timeouts / position unavailable: keep watching; the status line shows "searching".
+    render();
+  }
+
+  function startWatch() {
+    if (!('geolocation' in navigator)) {
+      showOverlay('No GPS available', 'This browser does not provide location, so speed cannot be measured.');
+      $('ovButton').hidden = true;
+      return;
+    }
+    if (watchId !== null) return;
+    watchId = navigator.geolocation.watchPosition(onPosition, onError,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+
+  function stopWatch() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  }
+
+  // Keep the screen awake while the page is visible (iOS 16.4+, Chrome). Released automatically when hidden.
+  function keepAwake() {
+    if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') return;
+    navigator.wakeLock.request('screen').then(function (lock) {
+      wakeLock = lock;
+      lock.addEventListener('release', function () { wakeLock = null; });
+    }).catch(function () {});
+  }
+
+  function showOverlay(title, text) {
+    $('ovTitle').textContent = title; $('ovText').textContent = text;
+    $('ovButton').hidden = false; $('overlay').hidden = false;
+  }
+  function hideOverlay() { $('overlay').hidden = true; }
+
+  function fmtTime(ms) {
+    var s = Math.floor(ms / 1000), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return Math.floor(s / 3600) + ':' + p(Math.floor(s / 60) % 60) + ':' + p(s % 60);
+  }
+
+  function render() {
+    var factor = mph ? MPS_TO_MPH : MPS_TO_KMH, unit = mph ? 'mph' : 'km/h';
+    var live = lastFixAt !== 0 && performance.now() - lastFixAt < FIX_TIMEOUT_MS;
+    var shown = live ? trip.speed * factor : null;
+
+    var steps = mph ? [40, 80, 120, 200, 320] : [60, 120, 200, 320, 500];
+    var reference = Math.max(shown || 0, trip.max * factor);
+    var gaugeMax = steps[steps.length - 1];
+    for (var i = 0; i < steps.length; i++) if (steps[i] > reference) { gaugeMax = steps[i]; break; }
+
+    var fraction = Math.min(1, Math.max(0, (shown || 0) / gaugeMax));
+    var arc = $('arcValue');
+    arc.setAttribute('stroke-dasharray', (ARC * fraction) + ' ' + CIRCLE);
+    arc.style.visibility = fraction > 0 ? 'visible' : 'hidden'; // a round cap would leave a dot at 0
+
+    $('speed').textContent = shown === null ? '–' : Math.round(shown);
+    $('speed').setAttribute('class', shown === null ? 'stale' : '');
+    $('unit').textContent = unit;
+    $('scaleMax').textContent = gaugeMax;
+
+    var avg = trip.movingMs > 0 ? trip.distance / (trip.movingMs / 1000) : 0;
+    var dist = mph ? trip.distance / METERS_PER_MILE : trip.distance / 1000;
+    $('sMax').textContent = Math.round(trip.max * factor) + ' ' + unit;
+    $('sAvg').textContent = Math.round(avg * factor) + ' ' + unit;
+    $('sDist').textContent = dist.toFixed(dist < 100 ? 1 : 0) + (mph ? ' mi' : ' km');
+    $('sTime').textContent = fmtTime(trip.movingMs);
+
+    $('btnKmh').className = mph ? '' : 'on';
+    $('btnMph').className = mph ? 'on' : '';
+
+    var status = $('status');
+    status.className = live ? 'live' : '';
+    $('statusText').textContent =
+      live ? 'GPS ±' + Math.round(trip.accuracy) + ' m'
+      : lastFixAt !== 0 ? 'GPS signal lost · searching'
+      : 'Searching for GPS · works best near a window';
+  }
+
+  function setMph(value) {
+    mph = value;
+    try { localStorage.setItem('mph', mph ? '1' : '0'); } catch (e) {}
+    render();
+  }
+
+  $('btnKmh').addEventListener('click', function () { setMph(false); });
+  $('btnMph').addEventListener('click', function () { setMph(true); });
+  $('gauge').addEventListener('click', function () { setMph(!mph); });
+  $('btnReset').addEventListener('click', function () {
+    trip.max = 0; trip.distance = 0; trip.movingMs = 0; render();
+  });
+  $('ovButton').addEventListener('click', function () { hideOverlay(); startWatch(); keepAwake(); });
+  // Some browsers only grant the wake lock after a touch.
+  document.addEventListener('click', keepAwake);
+
+  // GPS only while on screen — same battery rule as the Android app.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') { startWatch(); keepAwake(); } else { stopWatch(); }
+  });
+
+  setInterval(render, 1000); // notices a lost signal even though no new fix arrives to tell us
+  render();
+  startWatch();
+  keepAwake();
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

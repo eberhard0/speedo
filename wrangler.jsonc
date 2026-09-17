@@ -1,0 +1,8 @@
+// Cloudflare Worker that serves the web version (web/) as static files at speedo.iameberhard.com.
+// No Worker code runs — assets only. custom_domain makes Cloudflare create the DNS record and certificate.
+{
+  "name": "speedo",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./web" },
+  "routes": [{ "pattern": "speedo.iameberhard.com", "custom_domain": true }]
+}

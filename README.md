@@ -15,3 +15,10 @@ In a train, GPS reception is best next to a window. The status line shows accura
 
 Builds run on GitHub Actions (`.github/workflows/android.yml`). Every push produces an APK artifact; pushing a
 `vX.Y.Z` tag attaches a signed AAB + APK to a GitHub Release (needs the four signing secrets described in the workflow).
+
+## Web version (iPhone)
+
+`web/` is the same speedometer as an installable web app (uses the browser Geolocation API's Doppler `coords.speed`,
+Wake Lock to keep the screen on, and a small service worker so it opens offline). It is served as static files by a
+Cloudflare Worker at https://speedo.iameberhard.com — see `wrangler.jsonc`. On iPhone: open the address in Safari →
+Share → **Add to Home Screen**. `python3 web/make-icons.py` regenerates the icons.
