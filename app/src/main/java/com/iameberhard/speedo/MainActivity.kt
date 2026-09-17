@@ -236,22 +236,31 @@ private fun Speedometer(viewModel: SpeedViewModel) {
         "MOVING TIME" to formatDuration(trip.movingMs),
     )
 
+    // GPS status sits inside the dial, under the unit: a headline plus a smaller detail line.
+    val satellites = viewModel.satellites
+    val accuracy = trip.accuracyM
+    val status = when {
+        !viewModel.gpsEnabled -> GpsStatus("Location is off", null, Warning)
+        live -> GpsStatus(
+            if (accuracy != null) "GPS ±${accuracy.roundToInt()} m" else "GPS locked",
+            "$satellites satellites",
+            Accent,
+        )
+        trip.lastFixMs != 0L -> GpsStatus("GPS signal lost", "searching · $satellites satellites", Warning)
+        else -> GpsStatus("Searching for GPS", "works best near a window", Muted)
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 600.dp
         val short = maxHeight < 480.dp
         Column(Modifier.fillMaxSize()) {
-            StatusLine(
-                gpsEnabled = viewModel.gpsEnabled,
-                live = live,
-                everFixed = trip.lastFixMs != 0L,
-                accuracyM = trip.accuracyM,
-                satellites = viewModel.satellites,
-                onEnableGps = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
-            )
+            if (!viewModel.gpsEnabled) {
+                LocationOffRow(onEnableGps = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) })
+            }
             if (wide) {
                 // Unfolded / landscape: gauge on the left, trip figures on the right.
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Gauge(speed, unit, gaugeMax, viewModel::toggleUnit, Modifier.weight(1f).fillMaxHeight())
+                    Gauge(speed, unit, gaugeMax, status, viewModel::toggleUnit, Modifier.weight(1f).fillMaxHeight())
                     Spacer(Modifier.width(16.dp))
                     if (short) {
                         StatGrid(stats, Modifier.width(320.dp))
@@ -262,7 +271,7 @@ private fun Speedometer(viewModel: SpeedViewModel) {
                     }
                 }
             } else {
-                Gauge(speed, unit, gaugeMax, viewModel::toggleUnit, Modifier.weight(1f).fillMaxWidth())
+                Gauge(speed, unit, gaugeMax, status, viewModel::toggleUnit, Modifier.weight(1f).fillMaxWidth())
                 StatGrid(stats, Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(12.dp))
@@ -275,40 +284,30 @@ private fun Speedometer(viewModel: SpeedViewModel) {
     }
 }
 
+private class GpsStatus(val headline: String, val detail: String?, val color: Color)
+
 @Composable
-private fun StatusLine(
-    gpsEnabled: Boolean,
-    live: Boolean,
-    everFixed: Boolean,
-    accuracyM: Float?,
-    satellites: Int,
-    onEnableGps: () -> Unit,
-) {
+private fun LocationOffRow(onEnableGps: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val dot = when {
-            !gpsEnabled -> Warning
-            live -> Accent
-            else -> Muted
-        }
-        Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(dot))
+        Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(Warning))
         Spacer(Modifier.width(8.dp))
-        val text = when {
-            !gpsEnabled -> "Location is turned off"
-            live && accuracyM != null -> "GPS ±${accuracyM.roundToInt()} m · $satellites satellites"
-            live -> "GPS · $satellites satellites"
-            everFixed -> "GPS signal lost · searching ($satellites satellites)"
-            else -> "Searching for GPS ($satellites satellites) · works best near a window"
-        }
-        Text(text, color = if (gpsEnabled) Muted else Warning, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        if (!gpsEnabled) TextButton(onClick = onEnableGps) { Text("Turn on") }
+        Text("Location is turned off", color = Warning, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        TextButton(onClick = onEnableGps) { Text("Turn on") }
     }
 }
 
 @Composable
-private fun Gauge(speed: Float?, unit: String, gaugeMax: Int, onToggleUnit: () -> Unit, modifier: Modifier = Modifier) {
+private fun Gauge(
+    speed: Float?,
+    unit: String,
+    gaugeMax: Int,
+    status: GpsStatus,
+    onToggleUnit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val side: Dp = min(maxWidth, maxHeight)
         val stroke = side * 0.05f
@@ -320,6 +319,8 @@ private fun Gauge(speed: Float?, unit: String, gaugeMax: Int, onToggleUnit: () -
         val speedSize = with(density) { (side * 0.32f).toSp() }
         val unitSize = with(density) { (side * 0.075f).toSp() }
         val scaleSize = with(density) { (side * 0.045f).toSp() }
+        val statusSize = with(density) { (side * 0.06f).toSp() }
+        val detailSize = with(density) { (side * 0.042f).toSp() }
 
         Box(
             Modifier
@@ -351,6 +352,16 @@ private fun Gauge(speed: Float?, unit: String, gaugeMax: Int, onToggleUnit: () -
                     ),
                 )
                 Text(unit, color = Accent, style = TextStyle(fontSize = unitSize, fontWeight = FontWeight.Medium))
+                Spacer(Modifier.height(side * 0.025f))
+                Text(
+                    "● ${status.headline}",
+                    color = status.color,
+                    style = TextStyle(fontSize = statusSize, fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                if (status.detail != null) {
+                    Text(status.detail, color = Muted, style = TextStyle(fontSize = detailSize), maxLines = 1)
+                }
             }
             // Scale ends, sitting in the open bottom of the arc.
             Row(

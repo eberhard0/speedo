@@ -1,6 +1,6 @@
 // Offline shell for Speedo. Network-first so a new deploy shows up on the next launch;
 // the cache only answers when there is no connection (tunnels, roaming, flight mode).
-const CACHE = 'speedo-v1';
+const CACHE = 'speedo-v2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
